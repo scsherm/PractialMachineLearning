@@ -1,0 +1,75 @@
+---
+title: "Predicting the Quality of Weight Lifting Exercises"
+author: "Samuel Sherman"
+output:
+  html_document: default
+  geometry: margin = 0.5in
+  fontsize: 10pt
+  pdf_document: null
+---
+## __Synopsis__
+The dataset was provided through Pontifical Catholic University of Rio De Janeiro. A link for the description of the data is [here](http://groupware.les.inf.puc-rio.br/har). The purpose of the dataset is to provide a method of predicting the quality of how an exercise is performed.  Class "A" identifies a correctly performed exercise, while classes "B" through "E" identifies common mistakes. 
+
+## __Loading and Examining Data__
+The caret package is loaded and the data is loaded, while trying to identify all NA values.  
+``` {r}
+library(caret)
+#Read data files and make sure all empty variables are defined as NA
+training <- read.csv("pml-training.csv", na.strings = c("", "NA", "#DIV/0!"))
+testing <- read.csv("pml-testing.csv", na.strings = c("", "NA", "#DIV/0!"))
+trainRows <- nrow(training)
+testRows <- nrow(testing)
+testRows/(testRows + trainRows)
+trainRows/(testRows + trainRows)
+```
+## __Pre-Processing__
+The training represents 99.8% of the data and the testing represents .1% of the data.  Therefore, I find it appropriate to re-partition the original training dataset, as to avoid over-fitting. I apply 75% of the data to "training2" and 25% to "testing2", which will be used for cross-validation. I then identify the rows with significant NA values and remove them from the dataset, as they will not be used as predictors.
+``` {r}
+set.seed(6847)
+# 75% of data for training and 25% for cross-validation
+inTrain <- createDataPartition(training$classe, p = 3/4, list = F)
+training2 <- training[inTrain, ] #original training data repartitioned
+testing2 <- training[-inTrain, ]
+
+#pre-processing
+training2 <- training2[ , -c(1,2,3,4,5,6,7)] #remove first 7 columns
+testing2 <- testing2[ , -c(1,2,3,4,5,6,7)] #remove first 7 columns
+NAtrain <- apply(training2,2,function(x) {sum(is.na(x))}) #NA's per column 
+NAtest <- apply(testing2,2,function(x) {sum(is.na(x))}) #NA's per column
+TrainData <- training2[ , which(NAtrain == 0)] #columns without na's 
+TestData <- testing2[ , which(NAtest == 0)] #columns without na's
+```
+## __Model-Fitting__
+I apply the random forest model to the dataset, as it is considered the most reliable model. If errors are too high, another model will be tested.  
+``` {r}
+mFit <- train(classe ~., data = TrainData, method = "rf") #classe as outcome; all other variables as predictors
+```
+## __Cross-Validation__
+I start with the cross-validation dataset "TestData", representing 25% of the data. I predict the classification on all exercises for all observations and compare to the true values.
+```{r}
+predict <- predict(mFit, TestData)
+numRight <- sum(predict == TestData$classe)
+numRows <- nrow(TestData) 
+numRight/numRows # Percent of values correctly identified
+table(predict, TestData$classe) # Diagonal matrix
+```
+It can be seen that the model is providing good accuracy, as 99% of the "classe" variables identified are correct. Also, examining the table of predicted values and true values reveals an almost perfect diagonal matrix. The majority of the values are along the diagonal, which represents a correctly identified outcome. Despite the few errors, I have high confidence that the model will correctly identify .1% of the data and has not been over-fitted.
+
+## __Final Prediction__
+I now apply all the same pre-processing applied to the training dataset, to the testing dataset as well. I then predict the classification to all 20 observations and write the values to their appropriately named text files for submission.
+```{r}
+#Clean testing data set exactly the same as training
+testing <- testing[, -c(1,2,3,4,5,6,7)]
+NAtesting <- apply(testing,2,function(x) {sum(is.na(x))})
+finalTesting <- testing[,which(NAtesting == 0)]
+finalPrediction <- predict(mFit, finalTesting)
+#Function to write text files
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(finalPrediction) #write files for submission
